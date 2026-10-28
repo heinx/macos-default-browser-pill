@@ -1,17 +1,31 @@
 name: release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.1.0)'
+        description: 'Release version (e.g. 0.2.0)'
         required: true
 
 jobs:
   release:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build
         run: ./scripts/build.sh
@@ -19,11 +33,12 @@ jobs:
       - name: Zip app bundle
         run: |
           cd build
-          ditto -c -k --keepParent "Browser Pill.app" "Browser-Pill-${{ inputs.version }}.zip"
+          ditto -c -k --keepParent "Browser Pill.app" "Browser-Pill-${{ steps.version.outputs.version }}.zip"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          name: v${{ inputs.version }}
-          files: Browser-Pill-${{ inputs.version }}.zip
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          files: Browser-Pill-${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true
