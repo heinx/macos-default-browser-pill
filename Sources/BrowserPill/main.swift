@@ -4,23 +4,50 @@ import ServiceManagement
 
 // MARK: - Model
 
-enum Browser: String, CaseIterable {
-    case chrome, firefox
-    var bundleID: String { self == .chrome ? "com.google.Chrome" : "org.mozilla.firefox" }
-    var title: String { self == .chrome ? "Google Chrome" : "Firefox" }
+enum BrowserFamily: String, Codable {
+    case chromium, firefox, generic
+
+    var appSupportDirName: String? {
+        switch self {
+        case .chromium: return "Google/Chrome"
+        case .firefox: return "Firefox"
+        case .generic: return nil
+        }
+    }
+
+    var profileArgs: [String] {
+        switch self {
+        case .chromium: return ["--profile-directory="]
+        case .firefox: return ["-P"]
+        case .generic: return []
+        }
+    }
+}
+
+struct BrowserDef: Equatable {
+    var id: String        // stable identifier used in keys: "chrome", "firefox", or custom
+    var title: String
+    var bundleID: String
+    var family: BrowserFamily
+
+    static let chrome = BrowserDef(id: "chrome", title: "Google Chrome", bundleID: "com.google.Chrome", family: .chromium)
+    static let firefox = BrowserDef(id: "firefox", title: "Firefox", bundleID: "org.mozilla.firefox", family: .firefox)
+    static let builtIn: [BrowserDef] = [.chrome, .firefox]
+
+    static func == (lhs: BrowserDef, rhs: BrowserDef) -> Bool { lhs.id == rhs.id }
 }
 
 struct Profile: Equatable {
-    var id: String          // Chrome: profile directory ("Default", "Profile 1"); Firefox: profile name
+    var id: String          // Chromium: profile directory ("Default", "Profile 1"); Firefox: profile name
     var name: String
     var isDefault: Bool
 }
 
 struct Slot {
-    var browser: Browser
+    var browser: BrowserDef
     var profile: Profile?
 
-    var key: String { profile == nil ? browser.rawValue : "\(browser.rawValue)|\(profile!.id)" }
+    var key: String { profile == nil ? browser.id : "\(browser.id)|\(profile!.id)" }
     var label: String { profile?.name ?? browser.title }
 }
 
@@ -33,12 +60,17 @@ enum Profiles {
         path.hasPrefix("~") ? NSHomeDirectory() + path.dropFirst() : path
     }
 
-    static func load(browser: Browser) -> [Profile] {
-        return browser == .chrome ? loadChrome() : loadFirefox()
+    static func load(browser: BrowserDef) -> [Profile] {
+        switch browser.family {
+        case .chromium: return loadChromium(appSupportDirName: browser.family.appSupportDirName!)
+        case .firefox: return loadFirefox()
+        case .generic: return []
+        }
     }
 
-    private static func loadChrome() -> [Profile] {
-        let path = home("~/Library/Application Support/Google/Chrome/Local State")
+    // Chromium family: same "Local State" format; dir name varies per browser.
+    static func loadChromium(appSupportDirName: String) -> [Profile] {
+        let path = home("~/Library/Application Support/\(appSupportDirName)/Local State")
         guard let data = FileManager.default.contents(atPath: path),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let profile = root["profile"] as? [String: Any],
@@ -46,15 +78,15 @@ enum Profiles {
         let order = (profile["profiles_order"] as? [Any])?.compactMap { $0 as? String } ?? []
         var profiles: [Profile] = []
         for dir in order where cache[dir] != nil {
-            profiles.append(chromeProfile(dir: dir, dict: cache[dir]!))
+            profiles.append(chromiumProfile(dir: dir, dict: cache[dir]!))
         }
         for dir in cache.keys.sorted() where !order.contains(dir) {
-            profiles.append(chromeProfile(dir: dir, dict: cache[dir]!))
+            profiles.append(chromiumProfile(dir: dir, dict: cache[dir]!))
         }
         return profiles
     }
 
-    private static func chromeProfile(dir: String, dict: [String: Any]) -> Profile {
+    private static func chromiumProfile(dir: String, dict: [String: Any]) -> Profile {
         let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return Profile(id: dir, name: name.isEmpty ? dir : name, isDefault: dir == "Default")
     }
@@ -94,6 +126,67 @@ enum Profiles {
 enum Store {
     static let defaults = UserDefaults.standard
 
+    // MARK: custom browsers
+
+    struct CustomBrowser: Codable, Equatable {
+        var id: String
+        var title: String
+        var bundleID: String
+        var family: BrowserFamily
+        var appSupportDirName: String
+    }
+
+    static func loadBrowsers() -> [BrowserDef] {
+        if let data = defaults.data(forKey: "customBrowsers"),
+           let customs = try? JSONDecoder().decode([CustomBrowser].self, from: data) {
+            let customDefs = customs.map {
+                BrowserDef(id: $0.id, title: $0.title, bundleID: $0.bundleID,
+                           family: $0.family == .chromium && !$0.appSupportDirName.isEmpty
+                               ? BrowserFamily.chromium : $0.family)
+            }
+            return BrowserDef.builtIn + customDefs
+        }
+        return BrowserDef.builtIn
+    }
+
+    static func addCustomBrowser(appURL: URL, family: BrowserFamily, appSupportDirName: String) -> Bool {
+        guard let bundle = Bundle(url: appURL) else { return false }
+        guard let bundleID = bundle.bundleIdentifier, let title = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") ?? bundle.object(forInfoDictionaryKey: "CFBundleName")) as? String else { return false }
+        var customs = customBrowsers()
+        guard !customs.contains(where: { $0.bundleID == bundleID }),
+              BrowserDef.builtIn.first(where: { $0.bundleID == bundleID }) == nil else { return false }
+        let baseID = bundleID.replacingOccurrences(of: ".", with: "-")
+        var id = baseID
+        var n = 2
+        while customs.contains(where: { $0.id == id }) { id = "\(baseID)-\(n)"; n += 1 }
+        customs.append(CustomBrowser(id: id, title: title, bundleID: bundleID,
+                                     family: family, appSupportDirName: appSupportDirName))
+        if let data = try? JSONEncoder().encode(customs) {
+            defaults.set(data, forKey: "customBrowsers")
+        }
+        return true
+    }
+
+    static func removeCustomBrowser(id: String) {
+        var customs = customBrowsers()
+        customs.removeAll { $0.id == id }
+        if let data = try? JSONEncoder().encode(customs) {
+            defaults.set(data, forKey: "customBrowsers")
+        }
+        defaults.removeObject(forKey: "shownProfiles.\(id)")
+        defaults.removeObject(forKey: "showBrowser.\(id)")
+    }
+
+    private static func customBrowsers() -> [CustomBrowser] {
+        if let data = defaults.data(forKey: "customBrowsers"),
+           let customs = try? JSONDecoder().decode([CustomBrowser].self, from: data) {
+            return customs
+        }
+        return []
+    }
+
+    // MARK: selection
+
     static func loadSelectedKey() -> String? {
         if let key = defaults.string(forKey: "selection") { return key }
         if let legacy = defaults.string(forKey: "browser") {
@@ -108,32 +201,32 @@ enum Store {
         defaults.set(key, forKey: "selection")
     }
 
-    static func shownProfileIDs(browser: Browser) -> Set<String> {
-        return Set(defaults.stringArray(forKey: "shownProfiles.\(browser.rawValue)") ?? [])
+    static func shownProfileIDs(browser: BrowserDef) -> Set<String> {
+        return Set(defaults.stringArray(forKey: "shownProfiles.\(browser.id)") ?? [])
     }
 
-    static func isProfileShown(browser: Browser, id: String) -> Bool {
+    static func isProfileShown(browser: BrowserDef, id: String) -> Bool {
         return shownProfileIDs(browser: browser).contains(id)
     }
 
-    static func toggleProfileShown(browser: Browser, id: String) {
+    static func toggleProfileShown(browser: BrowserDef, id: String) {
         var shown = shownProfileIDs(browser: browser)
         if shown.contains(id) { shown.remove(id) } else { shown.insert(id) }
-        defaults.set(Array(shown).sorted(), forKey: "shownProfiles.\(browser.rawValue)")
+        defaults.set(Array(shown).sorted(), forKey: "shownProfiles.\(browser.id)")
     }
 
-    static func showBrowserSlot(browser: Browser) -> Bool {
-        let key = "showBrowser.\(browser.rawValue)"
+    static func showBrowserSlot(browser: BrowserDef) -> Bool {
+        let key = "showBrowser.\(browser.id)"
         return defaults.object(forKey: key) == nil ? true : defaults.bool(forKey: key)
     }
 
-    static func toggleBrowserSlot(browser: Browser) {
-        defaults.set(!showBrowserSlot(browser: browser), forKey: "showBrowser.\(browser.rawValue)")
+    static func toggleBrowserSlot(browser: BrowserDef) {
+        defaults.set(!showBrowserSlot(browser: browser), forKey: "showBrowser.\(browser.id)")
     }
 
     static func loadSlots() -> [Slot] {
         var slots: [Slot] = []
-        for browser in Browser.allCases {
+        for browser in loadBrowsers() {
             guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleID) != nil else { continue }
             if showBrowserSlot(browser: browser) {
                 slots.append(Slot(browser: browser, profile: nil))
@@ -217,7 +310,7 @@ final class Pill: NSView {
         }
     }
 
-    private func isGroupActive(_ browser: Browser) -> Bool {
+    private func isGroupActive(_ browser: BrowserDef) -> Bool {
         let selected = slots.indices.contains(selectedIndex) ? slots[selectedIndex] : nil
         return selected?.browser == browser
     }
@@ -321,7 +414,7 @@ final class Pill: NSView {
         return true
     }
 
-    private func profileIndices(_ browser: Browser) -> [Int] {
+    private func profileIndices(_ browser: BrowserDef) -> [Int] {
         return slots.indices.filter { slots[$0].browser == browser && slots[$0].profile != nil }
     }
 
@@ -354,7 +447,8 @@ final class Pill: NSView {
         let menu = NSMenu()
         let profilesItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
         let sub = NSMenu(title: "Profiles")
-        for browser in Browser.allCases {
+        let browsers = Store.loadBrowsers()
+        for browser in browsers {
             guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleID) != nil else { continue }
             let infos = Profiles.load(browser: browser)
             let item = NSMenuItem(title: browser.title, action: nil, keyEquivalent: "")
@@ -374,13 +468,21 @@ final class Pill: NSView {
             browserSub.addItem(.separator())
             let showBrowser = NSMenuItem(title: "Show Browser Icon", action: #selector(AppDelegate.toggleBrowserSlotVisibility(_:)), keyEquivalent: "")
             showBrowser.state = Store.showBrowserSlot(browser: browser) ? .on : .off
-            showBrowser.representedObject = browser.rawValue
+            showBrowser.representedObject = browser.id
             browserSub.addItem(showBrowser)
+            if browser.id != BrowserDef.chrome.id && browser.id != BrowserDef.firefox.id {
+                let remove = NSMenuItem(title: "Remove Browser", action: #selector(AppDelegate.removeBrowser(_:)), keyEquivalent: "")
+                remove.representedObject = browser.id
+                browserSub.addItem(remove)
+            }
             item.submenu = browserSub
             sub.addItem(item)
         }
         profilesItem.submenu = sub
         menu.addItem(profilesItem)
+        let addBrowser = NSMenuItem(title: "Add Browser…", action: #selector(AppDelegate.addBrowser(_:)), keyEquivalent: "")
+        addBrowser.target = NSApp.delegate
+        menu.addItem(addBrowser)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Install Browser Switcher…", action: #selector(AppDelegate.setDefaultBrowser), keyEquivalent: "")
         let startup = menu.addItem(withTitle: "Start at Login", action: #selector(AppDelegate.toggleStartup), keyEquivalent: "")
@@ -436,9 +538,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
-        let profileArgs: [String] = slot.browser == .chrome ? ["--profile-directory=\(profile.id)"] : ["-P", profile.id]
-        let binary: String = slot.browser == .chrome ? "Google Chrome" : "Firefox"
-        let executableURL = appURL.appendingPathComponent("Contents/MacOS/\(binary)")
+        let profileArgs: [String] = slot.browser.family.profileArgs.map { $0.isEmpty ? "--profile-directory=\(profile.id)" : ($0 == "-P" ? "\(profile.id)" : $0) }
+        let executableURL = appURL.appendingPathComponent("Contents/MacOS/\(slot.browser.title)")
         let proc = Process()
         proc.executableURL = executableURL
         proc.arguments = profileArgs + urls.map(\.absoluteString)
@@ -453,14 +554,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleProfileVisibility(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
         let parts = key.components(separatedBy: "|")
-        guard parts.count == 2, let browser = Browser(rawValue: parts[0]) else { return }
+        guard parts.count == 2,
+              let browser = Store.loadBrowsers().first(where: { $0.id == parts[0] }) else { return }
         Store.toggleProfileShown(browser: browser, id: parts[1])
         refreshPill()
     }
 
     @objc func toggleBrowserSlotVisibility(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let browser = Browser(rawValue: raw) else { return }
+        guard let raw = sender.representedObject as? String,
+              let browser = Store.loadBrowsers().first(where: { $0.id == raw }) else { return }
         Store.toggleBrowserSlot(browser: browser)
+        refreshPill()
+    }
+
+    @objc func addBrowser(_ sender: NSMenuItem) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a Browser"
+        panel.message = "Select a browser app to add to the pill."
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        guard panel.runModal() == .OK, let appURL = panel.url else { return }
+        guard let bundle = Bundle(url: appURL), bundle.bundleIdentifier != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Not a valid app bundle"
+            alert.runModal()
+            return
+        }
+        let executableURL = appURL.appendingPathComponent("Contents/MacOS")
+        let executableNames = (try? FileManager.default.contentsOfDirectory(atPath: executableURL.path)) ?? []
+        let chromiumDefaults: [(match: String, dir: String)] = [
+            ("Brave", "BraveSoftware/Brave-Browser"), ("Edge", "Microsoft Edge"), ("Vivaldi", "Vivaldi"), ("Opera", "com.operasoftware.Opera"), ("Arc", "Arc/User Data")
+        ]
+        let firefoxDefaults: [(match: String, dir: String)] = [("Zen", "zen"), ("Waterfox", "Waterfox"), ("LibreWolf", "librewolf"), ("Floorp", "Floorp"), ("Tor", "TorBrowser-Data")]
+        var family = BrowserFamily.generic
+        var dirName = ""
+        if let name = executableNames.first(where: { n in chromiumDefaults.contains { $0.match.lowercased() == n.lowercased() } }) {
+            family = .chromium
+            dirName = chromiumDefaults.first { $0.match.lowercased() == name.lowercased() }!.dir
+        } else if let name = executableNames.first(where: { n in firefoxDefaults.contains { $0.match.lowercased() == n.lowercased() } }) {
+            family = .firefox
+            dirName = firefoxDefaults.first { $0.match.lowercased() == name.lowercased() }!.dir
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "Profile support"
+            alert.informativeText = "Could not detect a Chromium or Firefox profile layout for \(bundle.bundleIdentifier ?? "this app"). It will be added as a plain browser without profiles."
+            alert.addButton(withTitle: "Add without profiles")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() != .alertFirstButtonReturn { return }
+            family = .generic
+        }
+        guard Store.addCustomBrowser(appURL: appURL, family: family, appSupportDirName: dirName) else {
+            let alert = NSAlert()
+            alert.messageText = "Already added"
+            alert.informativeText = "This browser is already in the pill."
+            alert.runModal()
+            return
+        }
+        refreshPill()
+    }
+
+    @objc func removeBrowser(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        guard let browser = Store.loadBrowsers().first(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Remove \(browser.title) from the pill?"
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Store.removeCustomBrowser(id: id)
         refreshPill()
     }
 
