@@ -1,6 +1,10 @@
 # Browser Pill
 
-A small macOS menu bar app for routing web links to Chrome (left) or Firefox (right). Click anywhere on the pill to switch browsers; right-click for settings and quit. The selection persists across launches.
+A small macOS menu bar app for routing web links to a browser of your choice. The pill shows browser and profile slots: Chrome and Firefox, plus their profiles. Click a slot to select it; click the active slot to cycle in the clicked direction (left half cycles backward, right half cycles forward). Right-click for settings and quit. The selection persists across launches.
+
+## Browser profiles
+
+Right-click the pill and open **Profiles**. Each browser lists the profiles found on disk — Chrome profiles from `~/Library/Application Support/Google/Chrome/Local State`, Firefox profiles from `~/Library/Application Support/Firefox/profiles.ini`. Check the profiles you want to see in the pill, and toggle **Show Browser Icon** to keep or hide the plain browser slot. Selecting a profile slot routes links to that browser with that profile (Chrome via `--profile-directory`, Firefox via `-P`).
 
 ## Build and install
 
