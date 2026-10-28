@@ -392,9 +392,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let profileArgs: [String] = slot.browser == .chrome ? ["--profile-directory=\(profile.id)"] : ["-P", profile.id]
+        let binary: String = slot.browser == .chrome ? "Google Chrome" : "Firefox"
+        let executableURL = appURL.appendingPathComponent("Contents/MacOS/\(binary)")
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        proc.arguments = ["-n", appURL.path] + urls.map(\.absoluteString) + ["--args"] + profileArgs
+        proc.executableURL = executableURL
+        proc.arguments = profileArgs + urls.map(\.absoluteString)
         do { try proc.run() } catch { NSApp.presentError(error) }
     }
 
