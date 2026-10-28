@@ -184,9 +184,9 @@ final class Pill: NSView {
             if slot.profile == nil {
                 width = 28
             } else {
-                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 9)]
-                let textWidth = min((slot.label as NSString).size(withAttributes: attrs).width + 2, 70)
-                width = 2 + 14 + 3 + textWidth + 4
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 10)]
+                let textWidth = min((slot.label as NSString).size(withAttributes: attrs).width + 2, 76)
+                width = 2 + 18 + 3 + textWidth + 4
             }
             slotFrames.append(NSRect(x: x, y: 2, width: width, height: 18))
             x += width + 2
@@ -233,17 +233,17 @@ final class Pill: NSView {
         if slot.profile == nil {
             draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active)
         } else {
-            draw(icon: icon, in: NSRect(x: r.minX + 2, y: r.midY - 7, width: 14, height: 14), active: active)
+            draw(icon: icon, in: NSRect(x: r.minX + 1, y: r.midY - 8, width: 16, height: 16), active: active)
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 9),
-                .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.tertiaryLabelColor
+                .font: NSFont.boldSystemFont(ofSize: 10),
+                .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.labelColor
             ]
             let text = slot.label as NSString
-            let maxWidth = r.maxX - (r.minX + 19) - 1
-            let bounds = text.boundingRect(with: NSSize(width: maxWidth, height: 12),
+            let maxWidth = r.maxX - (r.minX + 21) - 1
+            let bounds = text.boundingRect(with: NSSize(width: maxWidth, height: 13),
                                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                                            attributes: attrs)
-            text.draw(in: NSRect(x: r.minX + 19, y: r.midY - bounds.height / 2, width: maxWidth, height: bounds.height),
+            text.draw(in: NSRect(x: r.minX + 21, y: r.midY - bounds.height / 2, width: maxWidth, height: bounds.height),
                       withAttributes: attrs)
         }
     }
@@ -252,12 +252,7 @@ final class Pill: NSView {
         if active {
             icon.draw(in: r)
         } else {
-            let dim = icon.copy() as! NSImage
-            dim.lockFocus()
-            NSColor.tertiaryLabelColor.set()
-            NSRect(origin: .zero, size: dim.size).fill(using: .sourceAtop)
-            dim.unlockFocus()
-            dim.draw(in: r)
+            icon.draw(in: r, from: .zero, operation: .sourceOver, fraction: 0.55)
         }
     }
 
