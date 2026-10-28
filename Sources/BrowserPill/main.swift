@@ -236,7 +236,7 @@ final class Pill: NSView {
             draw(icon: icon, in: NSRect(x: r.minX + 1, y: r.midY - 8, width: 16, height: 16), active: active)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 10),
-                .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.labelColor
+                .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.secondaryLabelColor
             ]
             let text = slot.label as NSString
             let maxWidth = r.maxX - (r.minX + 21) - 1
