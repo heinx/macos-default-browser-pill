@@ -57,12 +57,20 @@ final class Pill: NSView {
         NSColor.labelColor.withAlphaComponent(0.15).setStroke()
         NSBezierPath(roundedRect: NSRect(x: 1.5, y: 1.5, width: pillWidth - 3, height: 19), xRadius: 9.5, yRadius: 9.5).stroke()
 
-        NSColor.controlAccentColor.withAlphaComponent(0.85).setFill()
+        let highlight = NSColor.controlAccentColor.withAlphaComponent(0.30)
+        highlight.setFill()
         NSBezierPath(roundedRect: highlightRect(), xRadius: 8, yRadius: 8).fill()
+        NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+        NSBezierPath(roundedRect: highlightRect().insetBy(dx: 0.5, dy: 0.5), xRadius: 7.5, yRadius: 7.5).stroke()
 
         for (i, slot) in slots.enumerated() {
-            draw(slot: slot, in: slotFrames[i], active: i == selectedIndex)
+            draw(slot: slot, in: slotFrames[i], active: i == selectedIndex, groupActive: isGroupActive(slot.browser))
         }
+    }
+
+    private func isGroupActive(_ browser: Browser) -> Bool {
+        let selected = slots.indices.contains(selectedIndex) ? slots[selectedIndex] : nil
+        return selected?.browser == browser
     }
 
     private func highlightRect() -> NSRect {
@@ -77,11 +85,11 @@ final class Pill: NSView {
                       width: a.width + (b.width - a.width) * t, height: 18)
     }
 
-    private func draw(slot: Slot, in r: NSRect, active: Bool) {
+    private func draw(slot: Slot, in r: NSRect, active: Bool, groupActive: Bool) {
         let icon = NSWorkspace.shared.icon(forFile: "/Applications/\(slot.browser == .chrome ? "Google Chrome" : "Firefox").app")
         let hasBrowserSlot = slots.contains { $0.browser == slot.browser && $0.profile == nil }
         if slot.profile == nil {
-            draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active)
+            draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active || groupActive)
         } else if !hasBrowserSlot {
             draw(icon: icon, in: NSRect(x: r.minX + 1, y: r.midY - 8, width: 16, height: 16), active: active)
             drawLabel(slot: slot, in: r, fromX: r.minX + 19, active: active)
