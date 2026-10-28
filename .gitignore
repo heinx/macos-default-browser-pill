@@ -8,3 +8,6 @@ xcuserdata/
 DerivedData/
 *.o
 *.dSYM
+
+# Local plans and notes
+PLAN.md
