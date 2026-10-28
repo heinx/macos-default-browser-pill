@@ -184,9 +184,11 @@ final class Pill: NSView {
             if slot.profile == nil {
                 width = 28
             } else {
+                let hasBrowserSlot = slots.contains { $0.browser == slot.browser && $0.profile == nil }
+                let fromX: CGFloat = hasBrowserSlot ? 3 : 19
                 let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 10)]
                 let textWidth = min((slot.label as NSString).size(withAttributes: attrs).width + 2, 76)
-                width = 2 + 18 + 3 + textWidth + 4
+                width = fromX - 1 + textWidth + 4
             }
             slotFrames.append(NSRect(x: x, y: 2, width: width, height: 18))
             x += width + 2
@@ -230,22 +232,29 @@ final class Pill: NSView {
             return
         }
         let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        let hasBrowserSlot = slots.contains { $0.browser == slot.browser && $0.profile == nil }
         if slot.profile == nil {
             draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active)
-        } else {
+        } else if !hasBrowserSlot {
             draw(icon: icon, in: NSRect(x: r.minX + 1, y: r.midY - 8, width: 16, height: 16), active: active)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 10),
-                .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.secondaryLabelColor
-            ]
-            let text = slot.label as NSString
-            let maxWidth = r.maxX - (r.minX + 21) - 1
-            let bounds = text.boundingRect(with: NSSize(width: maxWidth, height: 13),
-                                           options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                                           attributes: attrs)
-            text.draw(in: NSRect(x: r.minX + 21, y: r.midY - bounds.height / 2, width: maxWidth, height: bounds.height),
-                      withAttributes: attrs)
+            drawProfileLabel(slot: slot, in: r, fromX: r.minX + 19, active: active)
+        } else {
+            drawProfileLabel(slot: slot, in: r, fromX: r.minX + 3, active: active)
         }
+    }
+
+    private func drawProfileLabel(slot: Slot, in r: NSRect, fromX: CGFloat, active: Bool) {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: 10),
+            .foregroundColor: active ? NSColor.alternateSelectedControlTextColor : NSColor.secondaryLabelColor
+        ]
+        let text = slot.label as NSString
+        let maxWidth = r.maxX - fromX - 1
+        let bounds = text.boundingRect(with: NSSize(width: maxWidth, height: 13),
+                                       options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                                       attributes: attrs)
+        text.draw(in: NSRect(x: fromX, y: r.midY - bounds.height / 2, width: maxWidth, height: bounds.height),
+                  withAttributes: attrs)
     }
 
     private func draw(icon: NSImage, in r: NSRect, active: Bool) {
