@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleName</key><string>Browser Pill</string>
+<key>CFBundleDisplayName</key><string>Browser Pill</string>
+<key>CFBundleIdentifier</key><string>com.browserpill.app</string>
+<key>CFBundleExecutable</key><string>BrowserPill</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSUIElement</key><true/>
+<key>NSUserActivityTypes</key><array><string>NSUserActivityTypeBrowsingWeb</string></array>
+<key>CFBundleDocumentTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeName</key><string>HTML document</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>public.html</string><string>public.xhtml</string></array>
+    </dict>
+</array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Web URLs</string><key>CFBundleURLSchemes</key><array><string>http</string><string>https</string></array><key>CFBundleTypeRole</key><string>Editor</string></dict></array>
+</dict></plist>
