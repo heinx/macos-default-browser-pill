@@ -166,9 +166,12 @@ final class Pill: NSView {
         animation = nil
         slots = Store.loadSlots()
         let key = selectedKey
-        let index = slots.firstIndex(where: { $0.key == key }) ?? 0
-        selectedIndex = index
-        selectedKey = slots.isEmpty ? "" : slots[index].key
+        var index = slots.firstIndex(where: { $0.key == key })
+        if let i = index, !isSelectable(i) {
+            index = profileIndices(slots[i].browser).first
+        }
+        selectedIndex = index ?? 0
+        selectedKey = slots.isEmpty ? "" : slots[selectedIndex].key
         if !slots.isEmpty && selectedKey != key { Store.saveSelected(key: selectedKey) }
         position = CGFloat(selectedIndex)
         layoutSlots()
@@ -203,12 +206,20 @@ final class Pill: NSView {
         NSColor.labelColor.withAlphaComponent(0.15).setStroke()
         NSBezierPath(roundedRect: NSRect(x: 1.5, y: 1.5, width: pillWidth - 3, height: 19), xRadius: 9.5, yRadius: 9.5).stroke()
 
-        NSColor.controlAccentColor.withAlphaComponent(0.85).setFill()
+        let highlight = NSColor.controlAccentColor.withAlphaComponent(0.30)
+        highlight.setFill()
         NSBezierPath(roundedRect: highlightRect(), xRadius: 8, yRadius: 8).fill()
+        NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+        NSBezierPath(roundedRect: highlightRect().insetBy(dx: 0.5, dy: 0.5), xRadius: 7.5, yRadius: 7.5).stroke()
 
         for (i, slot) in slots.enumerated() {
-            draw(slot: slot, in: slotFrames[i], active: i == selectedIndex)
+            draw(slot: slot, in: slotFrames[i], active: i == selectedIndex, groupActive: isGroupActive(slot.browser))
         }
+    }
+
+    private func isGroupActive(_ browser: Browser) -> Bool {
+        let selected = slots.indices.contains(selectedIndex) ? slots[selectedIndex] : nil
+        return selected?.browser == browser
     }
 
     private func highlightRect() -> NSRect {
@@ -223,7 +234,7 @@ final class Pill: NSView {
                       width: a.width + (b.width - a.width) * t, height: 18)
     }
 
-    private func draw(slot: Slot, in r: NSRect, active: Bool) {
+    private func draw(slot: Slot, in r: NSRect, active: Bool, groupActive: Bool) {
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: slot.browser.bundleID) else {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]
             let text = String(slot.browser.title.prefix(1)) as NSString
@@ -234,7 +245,7 @@ final class Pill: NSView {
         let icon = NSWorkspace.shared.icon(forFile: appURL.path)
         let hasBrowserSlot = slots.contains { $0.browser == slot.browser && $0.profile == nil }
         if slot.profile == nil {
-            draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active)
+            draw(icon: icon, in: NSRect(x: r.midX - 11, y: r.midY - 11, width: 22, height: 22), active: active || groupActive)
         } else if !hasBrowserSlot {
             draw(icon: icon, in: NSRect(x: r.minX + 1, y: r.midY - 8, width: 16, height: 16), active: active)
             drawProfileLabel(slot: slot, in: r, fromX: r.minX + 19, active: active)
@@ -275,7 +286,15 @@ final class Pill: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if let i = slotIndex(at: point) {
-            if i == selectedIndex {
+            if !isSelectable(i) {
+                let profiles = profileIndices(slots[i].browser)
+                let direction: CycleDirection = point.x < slotFrames[i].midX ? .backward : .forward
+                if let current = profiles.firstIndex(of: selectedIndex) {
+                    select(profiles[(current + direction.rawValue + profiles.count) % profiles.count])
+                } else {
+                    select(direction == .forward ? profiles.first! : profiles.last!)
+                }
+            } else if i == selectedIndex {
                 cycle(point.x < slotFrames[i].midX ? .backward : .forward)
             } else {
                 select(i)
@@ -294,9 +313,26 @@ final class Pill: NSView {
         animateSelection()
     }
 
+    private func isSelectable(_ index: Int) -> Bool {
+        let slot = slots[index]
+        if slot.profile == nil {
+            return profileIndices(slot.browser).isEmpty
+        }
+        return true
+    }
+
+    private func profileIndices(_ browser: Browser) -> [Int] {
+        return slots.indices.filter { slots[$0].browser == browser && slots[$0].profile != nil }
+    }
+
     private func cycle(_ direction: CycleDirection) {
         guard slots.count > 1 else { return }
-        select((selectedIndex + direction.rawValue + slots.count) % slots.count)
+        var target = (selectedIndex + direction.rawValue + slots.count) % slots.count
+        if !isSelectable(target) {
+            let step = direction.rawValue
+            target = (target + step + slots.count) % slots.count
+        }
+        select(target)
     }
 
     private func animateSelection() {
